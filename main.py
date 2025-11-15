@@ -5,7 +5,9 @@ LENGTH = 800
 HEIGHT = 600
 pygame.init()
 main_menu = pygame.display.set_mode((LENGTH, HEIGHT))
-pygame.display.set_caption("Main Menu") 
+pygame.display.set_caption("Main Menu")
+font = pygame.font.Font(None, 28)
+credit_text = font.render("Made By: TheOversizedCoat", True, (0, 0, 0)) 
 title = pygame.image.load("assets/Terraplatformer_menu_img.png").convert_alpha()
 title_small = pygame.transform.scale(title, (LENGTH, 200))
 
@@ -48,6 +50,7 @@ def draw(main_menu, button, events):
     main_menu.blit(menubg_large, (0, 0))
     title_x = (LENGTH - title_small.get_width()) // 2
     main_menu.blit(title_small, (title_x, 50))
+    main_menu.blit(credit_text, (10, HEIGHT - 30))
     button.start(events)
     closebtn.close(events)
 
