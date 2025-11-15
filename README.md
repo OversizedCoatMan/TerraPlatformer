@@ -1,0 +1,1 @@
+This game is a Platformer game based on the game Terraria which I hope to make regular updates to to get the game to a playable level and to add content updates. This is the second game I am making. Any advice or contributed is apriciated. :)
