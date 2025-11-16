@@ -34,6 +34,7 @@ class BUTTON:
                     print("Start Button Pressed")
                     Popen(["python", "game.py"])
                     running = False
+
     def close(self, events):
         global pos, running
         main_menu.blit(self.image, (self.rect.x, self.rect.y))
@@ -64,9 +65,7 @@ while running:
     events = pygame.event.get()
     pos = pygame.mouse.get_pos()
     clock.tick(60)
-    
     draw(main_menu, startbtn, events)
-        
     for event in events:
         if event.type == pygame.QUIT:
             running = False
