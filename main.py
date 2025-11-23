@@ -1,5 +1,5 @@
 import pygame 
-from subprocess import Popen
+import game
 
 LENGTH = 800
 HEIGHT = 600
@@ -32,7 +32,9 @@ class BUTTON:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.rect.collidepoint(pos):
                     print("Start Button Pressed")
-                    Popen(["python", "game.py"])
+                    # Signal launcher to start the game after quitting the menu
+                    global launch_game
+                    launch_game = True
                     running = False
 
     def close(self, events):
@@ -61,6 +63,7 @@ closebtn = BUTTON(LENGTH // 2, 400, close, 0.5, False)
 clock = pygame.time.Clock()
 
 running = True
+launch_game = False
 while running:
     events = pygame.event.get()
     pos = pygame.mouse.get_pos()
@@ -71,3 +74,6 @@ while running:
             running = False
     pygame.display.update()
 pygame.quit()
+if launch_game:
+    # Import and run the game in the same process (works with Nuitka builds)
+    game.main()
