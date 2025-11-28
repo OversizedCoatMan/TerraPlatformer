@@ -12,9 +12,10 @@ PLAYER_SIZE = (50, 60)
 GRAVITY = 0.5
 JUMP_VELOCITY = -11
 PLAYER_SPEED = 2.25
-TILEMAP_PATH = 'assets/test1.csv'
+TILEMAP_PATH = 'assets/tree test.csv'
 TILE_SIZE = 32  # Size of each tile
 MAP_SHIFT_DOWN_TILES = 3  # Lower map by 3 tiles
+PASS_THROUGH_TILES = ["10", "11", "12", "13", "14", "15", "16", "19", "20"]  # Tiles that can be passed through
 
 # --------------------------
 # GAME CLASS
@@ -104,9 +105,11 @@ class Game:
             self.facing_right = True
 
         self.player_x += dx
-
+        
         # Horizontal collision
         for tile in self.tilemap.tiles:
+            if tile.tile_id in  PASS_THROUGH_TILES:
+                continue
             tile_top = tile.rect.y + self.map_offset_y
             tile_bottom = tile_top + TILE_SIZE
             tile_left = tile.rect.x
@@ -116,8 +119,9 @@ class Game:
             player_left = self.player_x
             player_top = self.player_y
             player_bottom = self.player_y + PLAYER_SIZE[1]
-
+            
             if player_bottom > tile_top and player_top < tile_bottom:
+
                 if dx > 0 and player_right > tile_left and player_left < tile_left:
                     self.player_x = tile_left - PLAYER_SIZE[0]
                 elif dx < 0 and player_left < tile_right and player_right > tile_right:
@@ -134,6 +138,9 @@ class Game:
 
         # Vertical collision
         for tile in self.tilemap.tiles:
+            if tile.tile_id in  PASS_THROUGH_TILES:
+                continue
+            
             tile_top = tile.rect.y + self.map_offset_y
             tile_bottom = tile_top + TILE_SIZE
             tile_left = tile.rect.x
@@ -143,15 +150,17 @@ class Game:
             player_left = self.player_x
             player_top = self.player_y
             player_bottom = self.player_y + PLAYER_SIZE[1]
-
+            
+               
+            
             if player_right > tile_left and player_left < tile_right:
                 if self.player_vel_y > 0 and player_bottom > tile_top and player_top < tile_top:
-                    # Falling
+                # Falling
                     self.player_y = tile_top - PLAYER_SIZE[1]
                     self.player_vel_y = 0
                     self.is_jumping = False
                 elif self.player_vel_y < 0 and player_top < tile_bottom and player_bottom > tile_bottom:
-                    # Jumping
+                # Jumping
                     self.player_y = tile_bottom
                     self.player_vel_y = 0
 
