@@ -12,6 +12,7 @@ PLAYER_SIZE = (50, 60)
 GRAVITY = 0.5
 JUMP_VELOCITY = -11
 PLAYER_SPEED = 2.25
+SLIME_SPEED = 2
 TILEMAP_PATH = 'assets/tree test.csv'
 TILE_SIZE = 32  # Size of each tile
 MAP_SHIFT_DOWN_TILES = 3  # Lower map by 3 tiles
@@ -28,20 +29,89 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
 
-        # Load tilemap
         self.tilemap = TileMap(TILEMAP_PATH, tile_size=TILE_SIZE)
-
-        # Align map to bottom of screen and lower by MAP_SHIFT_DOWN_TILES
         self.map_offset_y = SCREEN_HEIGHT - len(self.tilemap.map_data) * TILE_SIZE
         self.map_offset_y += MAP_SHIFT_DOWN_TILES * TILE_SIZE
 
-        # Load player
         self.player = pygame.image.load('assets/PLAYER1.png').convert_alpha()
         self.player = pygame.transform.scale(self.player, PLAYER_SIZE)
 
-        # Initialize player position
+        # Create enemy here AFTER pygame is initialized
+        self.blue_slime = self.Enemy(300, 504, 'assets/blue slime.png')
+
         self.reset_game()
 
+
+    class Enemy:
+        def __init__(self, x, y, image_path):
+            self.x = x
+            self.y = y
+            self.image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.scale(self.image, (TILE_SIZE, TILE_SIZE))
+            # Correct rect creation
+            self.rect = self.image.get_rect(topleft=(self.x, self.y))
+            self.slime_vel_y = 0
+            self.direction = 1  # 1 for right, -1 for left
+        def slime_ai(self):
+            
+            # Apply gravity
+            self.slime_vel_y += GRAVITY
+            self.y += self.slime_vel_y
+
+            # --- VERTICAL COLLISION ---
+            for tile in game.tilemap.tiles:
+                if tile.tile_id in PASS_THROUGH_TILES:
+                    continue
+
+                tile_top = tile.rect.y + game.map_offset_y
+                tile_bottom = tile_top + TILE_SIZE
+                tile_left = tile.rect.x
+                tile_right = tile_left + TILE_SIZE
+
+                slime_left = self.x
+                slime_right = self.x + TILE_SIZE
+                slime_top = self.y
+                slime_bottom = self.y + TILE_SIZE
+
+                if slime_right > tile_left and slime_left < tile_right:
+                    # Falling onto tile
+                    if self.slime_vel_y > 0 and slime_bottom > tile_top and slime_top < tile_top:
+                        self.y = tile_top - TILE_SIZE
+                        self.slime_vel_y = 0
+
+            # --- HORIZONTAL MOVEMENT ---
+            self.x += SLIME_SPEED * self.direction
+
+            # --- HORIZONTAL COLLISION ---
+            for tile in game.tilemap.tiles:
+                if tile.tile_id in PASS_THROUGH_TILES:
+                    continue
+
+                tile_top = tile.rect.y + game.map_offset_y
+                tile_bottom = tile_top + TILE_SIZE
+                tile_left = tile.rect.x
+                tile_right = tile_left + TILE_SIZE
+
+                slime_left = self.x
+                slime_right = self.x + TILE_SIZE
+                slime_top = self.y
+                slime_bottom = self.y + TILE_SIZE
+
+                if slime_bottom > tile_top and slime_top < tile_bottom:
+                    # Walking into wall RIGHT
+                    if self.direction == 1 and slime_right > tile_left and slime_left < tile_left:
+                        self.x = tile_left - TILE_SIZE
+                        self.direction = -1
+
+                    # Walking into wall LEFT
+                    elif self.direction == -1 and slime_left < tile_right and slime_right > tile_right:
+                        self.x = tile_right
+                        self.direction = 1
+            self.rect.topleft = (self.x, self.y)
+
+        
+
+            
     # --------------------------
     # RESET GAME
     # --------------------------
@@ -49,10 +119,13 @@ class Game:
         # Get the bottom-most tile
         bottom_tile = max(self.tilemap.tiles, key=lambda t: t.rect.y)
         self.player_x = 10
-        self.player_y = bottom_tile.rect.y + self.map_offset_y - PLAYER_SIZE[1]
+        self.player_y = 540  - PLAYER_SIZE[1]
         self.player_vel_y = 0
         self.is_jumping = False
         self.facing_right = True
+        self.x = 300
+        self.y = 504
+        self.direction = 1
 
     # --------------------------
     # MAIN LOOP
@@ -63,6 +136,7 @@ class Game:
             self.events()
             self.update()
             self.draw()
+            self.blue_slime.slime_ai()
         pygame.quit()
         sys.exit()
 
@@ -95,6 +169,7 @@ class Game:
     # GAME LOGIC
     # --------------------------
     def update(self):
+        
         # HORIZONTAL MOVEMENT
         dx = 0
         if self.keys[pygame.K_a]:
@@ -105,7 +180,10 @@ class Game:
             self.facing_right = True
 
         self.player_x += dx
-        
+        player_rect = pygame.Rect(self.player_x, self.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1])
+
+        if player_rect.colliderect(self.blue_slime.rect):
+            self.reset_game()
         # Horizontal collision
         for tile in self.tilemap.tiles:
             if tile.tile_id in  PASS_THROUGH_TILES:
@@ -126,7 +204,7 @@ class Game:
                     self.player_x = tile_left - PLAYER_SIZE[0]
                 elif dx < 0 and player_left < tile_right and player_right > tile_right:
                     self.player_x = tile_right
-
+            
         # Clamp player horizontally
         map_left = 0
         map_right = max(tile.rect.x for tile in self.tilemap.tiles) + TILE_SIZE
@@ -167,7 +245,7 @@ class Game:
         # Reset if player falls below screen
         if self.player_y + PLAYER_SIZE[1] >= SCREEN_HEIGHT:
             self.reset_game()
-
+    
     # --------------------------
     # DRAW
     # --------------------------
@@ -176,6 +254,7 @@ class Game:
         self.tilemap.draw_map(self.screen, y_offset=self.map_offset_y)
         player_image = self.player if self.facing_right else pygame.transform.flip(self.player, True, False)
         self.screen.blit(player_image, (self.player_x, self.player_y))
+        self.screen.blit(self.blue_slime.image, (self.blue_slime.x, self.blue_slime.y))
         pygame.display.update()
 
 # --------------------------

@@ -1,5 +1,6 @@
 import pygame 
 import game
+from subprocess import Popen
 
 LENGTH = 800
 HEIGHT = 600
@@ -76,4 +77,4 @@ while running:
 pygame.quit()
 if launch_game:
     # Import and run the game in the same process (works with Nuitka builds)
-    game.main()
+    Popen(['python', 'game.py'])
