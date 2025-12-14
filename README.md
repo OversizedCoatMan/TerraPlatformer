@@ -3,7 +3,8 @@ This game is a Platformer game based on the game Terraria which I hope to make r
 Development
 -----------
 
-This project uses Python 3.11. To create and activate a local virtual environment named `.venv` on Windows (PowerShell):
+This project uses Python 3.11. To create and activate a local virtual environment named
+`.venv` on Windows (PowerShell):
 
 ```powershell
 py -3.11 -m venv .venv

@@ -119,7 +119,11 @@ class Game:
         # Get the bottom-most tile
         bottom_tile = max(self.tilemap.tiles, key=lambda t: t.rect.y)
         self.player_x = 10
+<<<<<<< HEAD
         self.player_y = 350  - PLAYER_SIZE[1]
+=======
+        self.player_y = 540  - PLAYER_SIZE[1]
+>>>>>>> d0f83245f8e02d73e35a3ea0a7c3eb7aa8db65a0
         self.player_vel_y = 0
         self.is_jumping = False
         self.facing_right = True
