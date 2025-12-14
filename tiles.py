@@ -24,11 +24,35 @@ class TileMap:
         self.map_data = self.read_csv(filename)
 
     def read_csv(self, filename):
+        # Support two formats: a plain CSV (rows of comma-separated values)
+        # or a Tiled TMX file with a <data encoding="csv">...</data> block.
         map_data = []
-        with open(filename, newline='') as csvfile:
-            reader = csv.reader(csvfile)
-            for row in reader:
-                map_data.append(row)
+        with open(filename, 'r', newline='') as f:
+            content = f.read()
+
+        # If file looks like a TMX (XML) file, extract the CSV block
+        if '<data' in content and '</data>' in content:
+            start = content.find('<data')
+            # find the closing '>' of the opening <data ...> tag
+            start = content.find('>', start) + 1
+            end = content.find('</data>', start)
+            csv_block = content[start:end].strip()
+            # csv_block may contain newlines and trailing commas
+            for line in csv_block.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                # Remove any trailing commas, split on commas
+                parts = [cell.strip() for cell in line.split(',') if cell.strip() != '']
+                if parts:
+                    map_data.append(parts)
+        else:
+            # Plain CSV file
+            with open(filename, newline='') as csvfile:
+                reader = csv.reader(csvfile)
+                for row in reader:
+                    map_data.append([cell.strip() for cell in row])
+
         return map_data
 
     def load_tiles(self, filename):
