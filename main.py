@@ -1,5 +1,6 @@
-import pygame 
-import game
+import pygame
+import sys
+import os
 from subprocess import Popen
 
 LENGTH = 800
@@ -27,23 +28,23 @@ class BUTTON:
         self.rect.center = (x, y)
     
     def start(self, events):
-        global pos, running
+        global running, launch_game
         main_menu.blit(self.image, (self.rect.x, self.rect.y))
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.rect.collidepoint(pos):
+                # Use event.pos for the click position to avoid reliance on external state
+                if self.rect.collidepoint(event.pos):
                     print("Start Button Pressed")
                     # Signal launcher to start the game after quitting the menu
-                    global launch_game
                     launch_game = True
                     running = False
 
     def close(self, events):
-        global pos, running
+        global running
         main_menu.blit(self.image, (self.rect.x, self.rect.y))
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.rect.collidepoint(pos):
+                if self.rect.collidepoint(event.pos):
                     running = False
         
 
@@ -76,5 +77,7 @@ while running:
     pygame.display.update()
 pygame.quit()
 if launch_game:
-    # Import and run the game in the same process (works with Nuitka builds)
-    Popen(['python', 'game.py'])
+    # Launch `game.py` using the same Python interpreter and project cwd so
+    # installed packages (like pygame) are available in the subprocess.
+    script_path = os.path.join(os.path.dirname(__file__), 'game.py')
+    Popen([sys.executable, script_path], cwd=os.path.dirname(__file__))
