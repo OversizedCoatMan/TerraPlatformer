@@ -24,10 +24,19 @@ else:
     cur.execute('insert into game_data (level) values (?)', (1,))
     conn.commit()
     level = 1
-if level == 1:
+# determine tilemap path from saved level, with fallback if file missing
+TILEMAP_PATH = f'assets/level {level}.tmx'
+if not os.path.exists(TILEMAP_PATH):
+    print(f"Warning: map '{TILEMAP_PATH}' not found; falling back to 'assets/level 1.tmx'")
+    # reset saved level to 1 and persist that change
+    level = 1
     TILEMAP_PATH = 'assets/level 1.tmx'
-elif level == 2:
-    TILEMAP_PATH = 'assets/level 2.tmx'
+    try:
+        cur.execute('delete from game_data')
+        cur.execute('insert into game_data (level) values (?)', (level,))
+        conn.commit()
+    except Exception:
+        pass
 
 
 #constant variables
@@ -39,9 +48,12 @@ PLAYER_SIZE = (50, 60)
 PLAYER_SPEED = 2.25
 JUMP_VELOCITY = -11  # initial jump impulse (negative = upward)
 GRAVITY = 0.5
+SLIME_SPEED = 1.1
+
 TILE_SIZE = 32
 MAP_SHIFT_DOWN_TILES = 0  
 PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]  # Tiles that can be passed through 
+KILL_BLOCK_TILES = {"13"}
 
 #initialises pygame and display
 pygame.init()
@@ -76,11 +88,7 @@ class BUTTON:
         self.rect.center = (x, y)
 
     def menu(self, events, pos):
-        """Render the button and handle click events.
-
-        Accepts an events list (from pygame.event.get()) instead of calling
-        pygame.event.get() again so events aren't consumed twice.
-        """
+        
         global running
         screen.blit(self.image, (self.rect.x, self.rect.y))
         for event in events:
@@ -99,13 +107,14 @@ class player:
     def __init__(self):
         self.player = pygame.image.load('assets/PLAYER1.png').convert_alpha()
         self.player = pygame.transform.scale(self.player, PLAYER_SIZE)
-        if level == 1:
-            self.player_x = 100
-            self.player_y = 400
-        elif level == 2:
+        # default spawn position
+        self.player_x = 100
+        self.player_y = 400
+        if level == 2:
+            # alternate spawn for level 2
             self.player_x = 10
             self.player_y = 550
-        
+
         self.player_vel_y = 0
         self.is_jumping = False
         self.facing_right = True
@@ -113,6 +122,7 @@ class player:
         self.keys = pygame.key.get_pressed()
 
     def update(self):
+        global level, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, tile_bottom, tile_top, tile_left, tile_right
         # refresh input snapshot each frame
         self.keys = pygame.key.get_pressed()
 
@@ -124,6 +134,29 @@ class player:
         if self.keys[pygame.K_d]:
             dx = PLAYER_SPEED
             self.facing_right = True
+        # Advance level when reaching the right edge
+        if self.player_x >= 800 - PLAYER_SIZE[0]:
+            new_level = level + 1
+            new_path = f'assets/level {new_level}.tmx'
+            if not os.path.exists(new_path):
+                print(f"Warning: map '{new_path}' not found; staying on level {level}")
+            else:
+                level = new_level
+                TILEMAP_PATH = new_path
+                # reload and assign globally so draw/update use the new map
+                tilemap = load_map(TILEMAP_PATH)
+                self.tilemap = tilemap
+                map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
+                self.map_offset_y = map_offset_y
+                # persist level
+                cur.execute('delete from game_data')
+                cur.execute('insert into game_data (level) values (?)', (level,))
+                conn.commit()
+                # respawn enemy for the new level and attach to player (may be None)
+                blue_enemy = spawn_enemy(level)
+                self.blue_slime = blue_enemy
+                # place player at left edge of new level
+                self.player_x = 0
 
         self.player_x += dx
         player_rect = pygame.Rect(self.player_x, self.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1])
@@ -137,6 +170,7 @@ class player:
         for tile in self.tilemap.tiles:
             if tile.tile_id in PASS_THROUGH_TILES:
                 continue
+            
             tile_top = tile.rect.y + self.map_offset_y
             tile_bottom = tile_top + TILE_SIZE
             tile_left = tile.rect.x
@@ -149,7 +183,10 @@ class player:
 
             if player_bottom > tile_top and player_top < tile_bottom:
                 if dx > 0 and player_right > tile_left and player_left < tile_left:
-                    self.player_x = tile_left - PLAYER_SIZE[0]
+                    if tile.tile_id in KILL_BLOCK_TILES:
+                        reset_game()
+                    else:
+                        self.player_x = tile_left - PLAYER_SIZE[0]
                 elif dx < 0 and player_left < tile_right and player_right > tile_right:
                     self.player_x = tile_right
             
@@ -187,38 +224,121 @@ class player:
             
             if player_right > tile_left and player_left < tile_right:
                 if self.player_vel_y > 0 and player_bottom > tile_top and player_top < tile_top:
+                    if tile.tile_id in KILL_BLOCK_TILES:
+                        reset_game()
+                    else:
                 # Falling
-                    self.player_y = tile_top - PLAYER_SIZE[1]
-                    self.player_vel_y = 0
-                    self.is_jumping = False
+                        self.player_y = tile_top - PLAYER_SIZE[1]
+                        self.player_vel_y = 0
+                        self.is_jumping = False
                 elif self.player_vel_y < 0 and player_top < tile_bottom and player_bottom > tile_bottom:
+                    if tile.tile_id in KILL_BLOCK_TILES:
+                        reset_game()
+                    else:
                 # Jumping
-                    self.player_y = tile_bottom
-                    self.player_vel_y = 0
-
+                        self.player_y = tile_bottom
+                        self.player_vel_y = 0
+        if self.player_y >= SCREEN_HEIGHT - 32:
+            reset_game()
     def draw(self, surface):
         """Draw the player on the given surface, flipping when facing left."""
         image = self.player if self.facing_right else pygame.transform.flip(self.player, True, False)
         surface.blit(image, (self.player_x, self.player_y))
+class blue_slime:
+    def __init__(self, x, y):
+        self.image = pygame.image.load('assets/blue slime.png').convert_alpha()
+        self.image = pygame.transform.scale(self.image, (32, 32))
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.direction = 1
+        
+    def movement(self):
+        global SLIME_DIRECTION, tile_left, tile_right
+        
+        slime_left = self.rect.x
+        slime_right = self.rect.x + self.rect.width
+        slime_bottom = self.rect.y + self.rect.height
+        slime_top = self.rect.y
 
-# instantiate and attach map info (done after the player class is fully defined)
+        self.rect.x += SLIME_SPEED * self.direction
+
+            # --- HORIZONTAL COLLISION ---
+        for tile in tilemap.tiles:
+            if tile.tile_id in PASS_THROUGH_TILES:
+                continue
+
+            tile_top = tile.rect.y + map_offset_y
+            tile_bottom = tile_top + TILE_SIZE
+            tile_left = tile.rect.x
+            tile_right = tile_left + TILE_SIZE
+
+            slime_left = self.rect.x
+            slime_right = self.rect.x + TILE_SIZE
+            slime_top = self.rect.y
+            slime_bottom = self.rect.y + TILE_SIZE
+
+            if slime_bottom > tile_top and slime_top < tile_bottom:
+                # Walking into wall RIGHT
+                if self.direction == 1 and slime_right > tile_left and slime_left < tile_left:
+                    self.rect.x = tile_left - TILE_SIZE
+                    self.direction = -1
+                    # Walking into wall LEFT
+                elif self.direction == -1 and slime_left < tile_right and slime_right > tile_right:
+                    self.rect.x = tile_right
+                    self.direction = 1
+        self.rect.topleft = (self.rect.x, self.rect.y)
+
+    def collision(self, player_rect):
+        if self.rect.colliderect(player_rect):
+            reset_game()
+            print("collision")
+    def draw(self, surface):
+        surface.blit(self.image, (self.rect.x, self.rect.y))
+
+
+def spawn_enemy(level):
+    global blue_enemy
+    if level == 1:
+        return blue_slime(300, 504)
+    elif level == 2:
+        return blue_slime(200, 536)
+    else:
+        return None
+
+
+
+
 player_obj = player()
 player_obj.tilemap = tilemap
 player_obj.map_offset_y = map_offset_y
+# spawn the enemy for the current level
+blue_enemy = spawn_enemy(level)
+# attach the global enemy to the player so collisions work (player checks hasattr)
+player_obj.blue_slime = blue_enemy
 
 def draw():
     screen.fill((0,0,0))
     tilemap.draw_map(screen, y_offset=map_offset_y)
     menu_button.menu(events, pos=pygame.mouse.get_pos())
-    # draw player on top of tiles
+   
     player_obj.draw(screen)
-
+   
+    if blue_enemy is not None:
+        blue_enemy.draw(screen)
+        blue_enemy.collision(pygame.Rect(player_obj.player_x, player_obj.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1]))
     pygame.display.flip()
     
 def update():
     # game update logic
     player_obj.update()
-
+def reset_game():
+    global level
+    if level == 1:
+        player_obj.player_x = 100
+        player_obj.player_y = 374
+    elif level == 2:
+        player_obj.player_x = 10
+        player_obj.player_y = 462
 #handles events in game, 
 def event():
     global level, running, events
@@ -227,7 +347,7 @@ def event():
     
     for event in events:
         if event.type == pygame.QUIT:
-            level = 2
+            
             
             cur.execute('delete from game_data')
             cur.execute('insert into game_data (level) values (?)', (level,))
@@ -243,9 +363,15 @@ def run():
     while running:
         events = pygame.event.get()
         clock.tick(FPS)
+        if level == 1:
+            TILEMAP_PATH = 'assets/level 1.tmx'
+        elif level == 2:
+            TILEMAP_PATH = 'assets/level 2.tmx'
         event()
         update()
+        blue_slime.movement(blue_enemy)
         draw()
+
         
         
         
