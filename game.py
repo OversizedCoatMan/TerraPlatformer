@@ -161,10 +161,7 @@ class player:
         self.player_x += dx
         player_rect = pygame.Rect(self.player_x, self.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1])
 
-        # optional collision with blue_slime if present
-        if hasattr(self, 'blue_slime') and player_rect.colliderect(self.blue_slime.rect):
-            if hasattr(self, 'reset_game'):
-                self.reset_game()
+        
 
         # Horizontal collision
         for tile in self.tilemap.tiles:
@@ -291,7 +288,7 @@ class blue_slime:
     def collision(self, player_rect):
         if self.rect.colliderect(player_rect):
             reset_game()
-            print("collision")
+            
     def draw(self, surface):
         surface.blit(self.image, (self.rect.x, self.rect.y))
 
@@ -328,9 +325,8 @@ def draw():
         blue_enemy.collision(pygame.Rect(player_obj.player_x, player_obj.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1]))
     pygame.display.flip()
     
-def update():
-    # game update logic
-    player_obj.update()
+
+    
 def reset_game():
     global level
     if level == 1:
@@ -368,7 +364,8 @@ def run():
         elif level == 2:
             TILEMAP_PATH = 'assets/level 2.tmx'
         event()
-        update()
+        player_obj.update()
+        
         blue_slime.movement(blue_enemy)
         draw()
 
