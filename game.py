@@ -44,6 +44,7 @@ if not os.path.exists(TILEMAP_PATH):
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600 
 FPS = 60
+LIVES = 3
 PLAYER_SIZE = (50, 60)
 PLAYER_SPEED = 2.25
 JUMP_VELOCITY = -11  # initial jump impulse (negative = upward)
@@ -61,6 +62,8 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Tile Game")
 clock = pygame.time.Clock()
 running = True
+life_image = pygame.image.load('assets/heart.png').convert_alpha()
+life_image = pygame.transform.scale(life_image, (32, 32))
 
 # Example layer configuration: midground (trees) between background and spikes
 LAYER_IDS = {
@@ -163,7 +166,7 @@ class player:
 
         
 
-        # Horizontal collision
+        # Horizontal
         for tile in self.tilemap.tiles:
             if tile.tile_id in PASS_THROUGH_TILES:
                 continue
@@ -288,7 +291,7 @@ class blue_slime:
     def collision(self, player_rect):
         if self.rect.colliderect(player_rect):
             reset_game()
-            
+
     def draw(self, surface):
         surface.blit(self.image, (self.rect.x, self.rect.y))
 
@@ -319,7 +322,15 @@ def draw():
     menu_button.menu(events, pos=pygame.mouse.get_pos())
    
     player_obj.draw(screen)
-   
+    if LIVES == 3:
+        screen.blit(life_image, (0, 20))
+        screen.blit(life_image, (35, 20))
+        screen.blit(life_image, (70, 20))
+    elif LIVES == 2:
+        screen.blit(life_image, (0, 20))
+        screen.blit(life_image, (35, 20))
+    elif LIVES == 1:
+        screen.blit(life_image, (0, 20))
     if blue_enemy is not None:
         blue_enemy.draw(screen)
         blue_enemy.collision(pygame.Rect(player_obj.player_x, player_obj.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1]))
@@ -328,13 +339,41 @@ def draw():
 
     
 def reset_game():
-    global level
-    if level == 1:
-        player_obj.player_x = 100
-        player_obj.player_y = 374
-    elif level == 2:
-        player_obj.player_x = 10
-        player_obj.player_y = 462
+    global level, LIVES, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy
+    LIVES -= 1
+
+    if LIVES == 0:
+        # fully reset to level 1 and update globals used by draw()/collision
+        level = 1
+        TILEMAP_PATH = 'assets/level 1.tmx'
+        tilemap = load_map(TILEMAP_PATH)
+        map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
+        # attach updated map and offset to player so collisions match rendering
+        player_obj.tilemap = tilemap
+        player_obj.map_offset_y = map_offset_y
+        # respawn and attach enemy for the new level
+        blue_enemy = spawn_enemy(level)
+        player_obj.blue_slime = blue_enemy
+        # persist level to database
+        try:
+            cur.execute('delete from game_data')
+            cur.execute('insert into game_data (level) values (?)', (level,))
+            conn.commit()
+        except Exception:
+            pass
+        # restore lives
+        LIVES = 3
+
+    else:
+        # reset player state and position for current level
+        player_obj.player_vel_y = 0
+        player_obj.is_jumping = False
+        if level == 1:
+            player_obj.player_x = 100
+            player_obj.player_y = 374
+        elif level == 2:
+            player_obj.player_x = 10
+            player_obj.player_y = 462
 #handles events in game, 
 def event():
     global level, running, events
