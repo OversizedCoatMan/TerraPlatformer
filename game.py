@@ -10,18 +10,19 @@ import os
 #connects to database, if no table create one
 conn = sqlite3.connect('game_data.db')
 cur = conn.cursor()
-cur.execute('create table if not exists game_data (level integer)')
+cur.execute('create table if not exists game_data (level integer, deaths integer)')
 
 #fetches data from database
-cur.execute('select level from game_data order by rowid desc limit 1')
-row = cur.fetchone()
+cur.execute('select level, deaths from game_data order by rowid desc limit 1')
+row = cur.fetchall()
 
 #checks if there is level data in database, if not it sets it to level 1
 if row:
-    level = row[0]
+    level = row[0][0]
+    deaths = row[0][1]
 else:
-    
-    cur.execute('insert into game_data (level) values (?)', (1,))
+
+    cur.execute('insert into game_data (level, deaths) values (?, ?)', (1, 0))
     conn.commit()
     level = 1
 # determine tilemap path from saved level, with fallback if file missing
@@ -56,6 +57,8 @@ MAP_SHIFT_DOWN_TILES = 0
 PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]  # Tiles that can be passed through 
 KILL_BLOCK_TILES = {"13"}
 
+
+
 #initialises pygame and display
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -64,7 +67,7 @@ clock = pygame.time.Clock()
 running = True
 life_image = pygame.image.load('assets/heart.png').convert_alpha()
 life_image = pygame.transform.scale(life_image, (32, 32))
-
+arial = pygame.font.SysFont('Arial', 24, False, False)
 # Example layer configuration: midground (trees) between background and spikes
 LAYER_IDS = {
     'midground': {'4'},   # trees on their own layer
@@ -82,6 +85,12 @@ map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
 map_offset_y += MAP_SHIFT_DOWN_TILES * TILE_SIZE
 
 main_menu = pygame.image.load('assets/main menu.png').convert_alpha()
+
+def death_counter():
+    global deaths
+    # Render death counter in white so it contrasts with the black background
+    death_text = arial.render(f'Deaths: {deaths}', True, (255, 255, 255))
+    screen.blit(death_text, (650, 10))
 class BUTTON:
     def __init__(self, x, y, image, scale, held):
         width = image.get_width()
@@ -334,14 +343,20 @@ def draw():
     if blue_enemy is not None:
         blue_enemy.draw(screen)
         blue_enemy.collision(pygame.Rect(player_obj.player_x, player_obj.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1]))
+    # Draw HUD elements before flipping the display
+    death_counter()
     pygame.display.flip()
     
 
     
 def reset_game():
-    global level, LIVES, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy
+    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy
     LIVES -= 1
+    deaths += 1
 
+    print(deaths)
+    cur.execute('delete from game_data')
+    cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
     if LIVES == 0:
         # fully reset to level 1 and update globals used by draw()/collision
         level = 1
@@ -351,13 +366,15 @@ def reset_game():
         # attach updated map and offset to player so collisions match rendering
         player_obj.tilemap = tilemap
         player_obj.map_offset_y = map_offset_y
+        player_obj.player_x = 100
+        player_obj.player_y = 374
         # respawn and attach enemy for the new level
         blue_enemy = spawn_enemy(level)
         player_obj.blue_slime = blue_enemy
         # persist level to database
         try:
             cur.execute('delete from game_data')
-            cur.execute('insert into game_data (level) values (?)', (level,))
+            cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
             conn.commit()
         except Exception:
             pass
@@ -385,7 +402,7 @@ def event():
             
             
             cur.execute('delete from game_data')
-            cur.execute('insert into game_data (level) values (?)', (level,))
+            cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
             conn.commit()
             running = False
             pygame.quit()
