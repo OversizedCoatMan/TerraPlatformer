@@ -19,12 +19,20 @@ row = cur.fetchall()
 #checks if there is level data in database, if not it sets it to level 1
 if row:
     level = row[0][0]
-    deaths = row[0][1]
+    # Ensure deaths is an integer (fallback to 0 if DB stored NULL)
+    deaths = row[0][1] if row[0][1] is not None else 0
+    # If the database stored NULL for deaths, normalize it back to 0 so future updates are numeric
+    if row[0][1] is None:
+        try:
+            cur.execute('update game_data set deaths = ? where rowid = (select rowid from game_data order by rowid desc limit 1)', (deaths,))
+            conn.commit()
+        except Exception:
+            pass
 else:
-
     cur.execute('insert into game_data (level, deaths) values (?, ?)', (1, 0))
     conn.commit()
     level = 1
+    deaths = 0
 # determine tilemap path from saved level, with fallback if file missing
 TILEMAP_PATH = f'assets/level {level}.tmx'
 if not os.path.exists(TILEMAP_PATH):
@@ -34,7 +42,7 @@ if not os.path.exists(TILEMAP_PATH):
     TILEMAP_PATH = 'assets/level 1.tmx'
     try:
         cur.execute('delete from game_data')
-        cur.execute('insert into game_data (level) values (?)', (level,))
+        cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, 0))
         conn.commit()
     except Exception:
         pass
@@ -160,9 +168,9 @@ class player:
                 self.tilemap = tilemap
                 map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
                 self.map_offset_y = map_offset_y
-                # persist level
+                # persist level and current death count
                 cur.execute('delete from game_data')
-                cur.execute('insert into game_data (level) values (?)', (level,))
+                cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
                 conn.commit()
                 # respawn enemy for the new level and attach to player (may be None)
                 blue_enemy = spawn_enemy(level)
@@ -311,6 +319,8 @@ def spawn_enemy(level):
         return blue_slime(300, 504)
     elif level == 2:
         return blue_slime(200, 536)
+    elif level == 3:
+        return blue_slime(400, 500)
     else:
         return None
 
@@ -351,6 +361,9 @@ def draw():
     
 def reset_game():
     global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy
+    # Defensive: ensure deaths is an int (in case DB had NULL or other code left it unset)
+    if deaths is None:
+        deaths = 0
     LIVES -= 1
     deaths += 1
 
@@ -391,6 +404,9 @@ def reset_game():
         elif level == 2:
             player_obj.player_x = 10
             player_obj.player_y = 462
+        elif level == 3:
+            player_obj.player_x = 50
+            player_obj.player_y = 500
 #handles events in game, 
 def event():
     global level, running, events
