@@ -134,6 +134,10 @@ class player:
             # alternate spawn for level 2
             self.player_x = 10
             self.player_y = 550
+        elif level == 3:
+            # alternate spawn for level 3
+            self.player_x = 10
+            self.player_y = 350
 
         self.player_vel_y = 0
         self.is_jumping = False
@@ -320,7 +324,7 @@ def spawn_enemy(level):
     elif level == 2:
         return blue_slime(200, 536)
     elif level == 3:
-        return blue_slime(400, 500)
+        return blue_slime(900, 500)
     else:
         return None
 
@@ -405,8 +409,8 @@ def reset_game():
             player_obj.player_x = 10
             player_obj.player_y = 462
         elif level == 3:
-            player_obj.player_x = 50
-            player_obj.player_y = 500
+            player_obj.player_x = 10
+            player_obj.player_y = 352
 #handles events in game, 
 def event():
     global level, running, events
