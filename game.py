@@ -90,7 +90,7 @@ def death_counter():
     global deaths
     # Render death counter in white so it contrasts with the black background
     death_text = arial.render(f'Deaths: {deaths}', True, (255, 255, 255))
-    screen.blit(death_text, (650, 10))
+    screen.blit(death_text, (680, 10))
 class BUTTON:
     def __init__(self, x, y, image, scale, held):
         width = image.get_width()
@@ -231,7 +231,7 @@ class player:
             
                
             
-            if player_right > tile_left and player_left < tile_right:
+            if player_right > tile_left + 5 and player_left < tile_right - 5:
                 if self.player_vel_y > 0 and player_bottom > tile_top and player_top < tile_top:
                     if tile.tile_id in KILL_BLOCK_TILES:
                         reset_game()
@@ -326,7 +326,7 @@ blue_enemy = spawn_enemy(level)
 player_obj.blue_slime = blue_enemy
 
 def draw():
-    screen.fill((0,0,0))
+    screen.fill((102,102,255))
     tilemap.draw_map(screen, y_offset=map_offset_y)
     menu_button.menu(events, pos=pygame.mouse.get_pos())
    
