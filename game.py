@@ -4,11 +4,10 @@ from tiles import TileMap
 import sqlite3
 import subprocess
 import os
-#---------------#
-#--MAP LOADING--#
-#---------------#
+
+
 #connects to database, if no table create one
-conn = sqlite3.connect('game_data.db')
+conn = sqlite3.connect('assets/game_data.db')
 cur = conn.cursor()
 cur.execute('create table if not exists game_data (level integer, deaths integer)')
 
@@ -19,9 +18,9 @@ row = cur.fetchall()
 #checks if there is level data in database, if not it sets it to level 1
 if row:
     level = row[0][0]
-    # Ensure deaths is an integer (fallback to 0 if DB stored NULL)
+    
     deaths = row[0][1] if row[0][1] is not None else 0
-    # If the database stored NULL for deaths, normalize it back to 0 so future updates are numeric
+    
     if row[0][1] is None:
         try:
             cur.execute('update game_data set deaths = ? where rowid = (select rowid from game_data order by rowid desc limit 1)', (deaths,))
@@ -37,7 +36,7 @@ else:
 TILEMAP_PATH = f'assets/level {level}.tmx'
 if not os.path.exists(TILEMAP_PATH):
     print(f"Warning: map '{TILEMAP_PATH}' not found; falling back to 'assets/level 1.tmx'")
-    # reset saved level to 1 and persist that change
+    
     level = 1
     TILEMAP_PATH = 'assets/level 1.tmx'
     try:
@@ -54,6 +53,8 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600 
 FPS = 60
 LIVES = 3
+
+respawn_cooldown = 0
 PLAYER_SIZE = (50, 60)
 PLAYER_SPEED = 2.25
 JUMP_VELOCITY = -11  # initial jump impulse (negative = upward)
@@ -62,7 +63,7 @@ SLIME_SPEED = 1.1
 
 TILE_SIZE = 32
 MAP_SHIFT_DOWN_TILES = 0  
-PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]  # Tiles that can be passed through 
+PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]   
 KILL_BLOCK_TILES = {"13"}
 
 
@@ -76,15 +77,15 @@ running = True
 life_image = pygame.image.load('assets/heart.png').convert_alpha()
 life_image = pygame.transform.scale(life_image, (32, 32))
 arial = pygame.font.SysFont('Arial', 24, False, False)
-# Example layer configuration: midground (trees) between background and spikes
+# added layers so objects can be drawn on top of other tiles
 LAYER_IDS = {
-    'midground': {'4'},   # trees on their own layer
-    'foreground': {'13'}  # spikes on top
+    'midground': {'4'},   #trees
+    'foreground': {'13'}  #spikes
 }
 LAYER_ORDER = ['background', 'midground', 'foreground']
 
 def load_map(filename):
-    # pass custom layers to TileMap; defaults keep behaviour the same if omitted
+    # loads tilemap using function from tiles.py
     return TileMap(filename, tile_size=TILE_SIZE, layer_ids=LAYER_IDS, layer_order=LAYER_ORDER)
 
 #loads tilemap and calculates y offset to lower map
@@ -93,12 +94,13 @@ map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
 map_offset_y += MAP_SHIFT_DOWN_TILES * TILE_SIZE
 
 main_menu = pygame.image.load('assets/main menu.png').convert_alpha()
-
+#counts total deaths and displayes them on the screen
 def death_counter():
     global deaths
     # Render death counter in white so it contrasts with the black background
     death_text = arial.render(f'Deaths: {deaths}', True, (255, 255, 255))
     screen.blit(death_text, (680, 10))
+#button class for main menu button
 class BUTTON:
     def __init__(self, x, y, image, scale, held):
         width = image.get_width()
@@ -106,7 +108,7 @@ class BUTTON:
         self.image = pygame.transform.scale(image, (int(width * scale), int(height * scale)))
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
-
+    #function for menu button
     def menu(self, events, pos):
         
         global running
@@ -127,27 +129,28 @@ class player:
     def __init__(self):
         self.player = pygame.image.load('assets/PLAYER1.png').convert_alpha()
         self.player = pygame.transform.scale(self.player, PLAYER_SIZE)
-        # default spawn position
-        self.player_x = 100
-        self.player_y = 400
-        if level == 2:
-            # alternate spawn for level 2
+        
+        if level == 1:#level 1 spawn
+            self.player_x = 100
+            self.player_y = 400
+        elif level == 2:# level 2 spawn
+            
             self.player_x = 10
             self.player_y = 550
-        elif level == 3:
-            # alternate spawn for level 3
+        elif level == 3:# spawn for level 3
+            
             self.player_x = 10
             self.player_y = 350
 
         self.player_vel_y = 0
         self.is_jumping = False
         self.facing_right = True
-        # keys will be refreshed each frame in update()
+        
         self.keys = pygame.key.get_pressed()
 
     def update(self):
         global level, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, tile_bottom, tile_top, tile_left, tile_right
-        # refresh input snapshot each frame
+        
         self.keys = pygame.key.get_pressed()
 
         # HORIZONTAL MOVEMENT
@@ -158,7 +161,7 @@ class player:
         if self.keys[pygame.K_d]:
             dx = PLAYER_SPEED
             self.facing_right = True
-        # Advance level when reaching the right edge
+        # next level when end of current level reached
         if self.player_x >= 800 - PLAYER_SIZE[0]:
             new_level = level + 1
             new_path = f'assets/level {new_level}.tmx'
@@ -167,19 +170,19 @@ class player:
             else:
                 level = new_level
                 TILEMAP_PATH = new_path
-                # reload and assign globally so draw/update use the new map
+                # load the new map and calculate its offset
                 tilemap = load_map(TILEMAP_PATH)
                 self.tilemap = tilemap
                 map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
                 self.map_offset_y = map_offset_y
-                # persist level and current death count
+                # put new level in database
                 cur.execute('delete from game_data')
                 cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
                 conn.commit()
-                # respawn enemy for the new level and attach to player (may be None)
+                # spawn enemys for level
                 blue_enemy = spawn_enemy(level)
                 self.blue_slime = blue_enemy
-                # place player at left edge of new level
+                # spawn player at start of new level
                 self.player_x = 0
 
         self.player_x += dx
@@ -217,7 +220,7 @@ class player:
 
         self.player_x = max(map_left, min(self.player_x, map_right - PLAYER_SIZE[0]))
 
-        # JUMPING (single-press)
+        # JUMPING 
         if (self.keys[pygame.K_SPACE] or self.keys[pygame.K_w] or self.keys[pygame.K_UP]) and not self.is_jumping:
             self.player_vel_y = JUMP_VELOCITY
             self.is_jumping = True
@@ -336,7 +339,7 @@ player_obj.tilemap = tilemap
 player_obj.map_offset_y = map_offset_y
 # spawn the enemy for the current level
 blue_enemy = spawn_enemy(level)
-# attach the global enemy to the player so collisions work (player checks hasattr)
+
 player_obj.blue_slime = blue_enemy
 
 def draw():
@@ -357,15 +360,18 @@ def draw():
     if blue_enemy is not None:
         blue_enemy.draw(screen)
         blue_enemy.collision(pygame.Rect(player_obj.player_x, player_obj.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1]))
-    # Draw HUD elements before flipping the display
+    
     death_counter()
     pygame.display.flip()
     
 
     
 def reset_game():
-    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy
-    # Defensive: ensure deaths is an int (in case DB had NULL or other code left it unset)
+    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, respawn_cooldown
+    # prevents multiple deaths when reseting the game
+    if respawn_cooldown > 0:
+        return
+    # make sure deaths is initialized and has a value
     if deaths is None:
         deaths = 0
     LIVES -= 1
@@ -375,28 +381,33 @@ def reset_game():
     cur.execute('delete from game_data')
     cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
     if LIVES == 0:
-        # fully reset to level 1 and update globals used by draw()/collision
+        LIVES = 3
         level = 1
+        player_obj.player_x = 100
+        player_obj.player_y = 374
+        # ensure player isn't moving or flagged as jumping so they don't immediately re-trigger a death
+        player_obj.player_vel_y = 0
+        player_obj.is_jumping = False
         TILEMAP_PATH = 'assets/level 1.tmx'
         tilemap = load_map(TILEMAP_PATH)
         map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
         # attach updated map and offset to player so collisions match rendering
         player_obj.tilemap = tilemap
         player_obj.map_offset_y = map_offset_y
-        player_obj.player_x = 100
-        player_obj.player_y = 374
+        
         # respawn and attach enemy for the new level
         blue_enemy = spawn_enemy(level)
         player_obj.blue_slime = blue_enemy
-        # persist level to database
+        # enter level and death data into database
         try:
             cur.execute('delete from game_data')
             cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
             conn.commit()
         except Exception:
             pass
-        # restore lives
-        LIVES = 3
+       #
+        # short cooldown to prevent immediate death
+        respawn_cooldown = FPS/2
 
     else:
         # reset player state and position for current level
@@ -431,10 +442,13 @@ def event():
 
 #calls functions while game is running
 def run():
-    global events
+    global events, respawn_cooldown
     while running:
         events = pygame.event.get()
         clock.tick(FPS)
+        # decrement respawn cooldown if active (prevents immediate double-deaths after a full reset)
+        if respawn_cooldown > 0:
+            respawn_cooldown -= 1
         if level == 1:
             TILEMAP_PATH = 'assets/level 1.tmx'
         elif level == 2:
