@@ -314,7 +314,8 @@ class TileMap:
                         t = Tile('assets/stone block.png', x*self.tile_size, y*self.tile_size, tile_id="12", flip_h=flip_h, flip_v=flip_v, flip_d=flip_d)
                     elif gid == '13':
                         t = Tile('assets/spike.png', x*self.tile_size, y*self.tile_size, tile_id="13", flip_h=flip_h, flip_v=flip_v, flip_d=flip_d)
-                    
+                    elif gid == '14':
+                        t = Tile('assets/water.png', x*self.tile_size, y*self.tile_size, tile_id="14", flip_h=flip_h, flip_v=flip_v, flip_d=flip_d)
 
                     # If the gid wasn't handled above, skip this cell (avoid appending None)
                     if t is None:

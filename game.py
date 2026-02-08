@@ -55,6 +55,7 @@ FPS = 60
 LIVES = 3
 
 respawn_cooldown = 0
+reward_cooldown = 0
 PLAYER_SIZE = (50, 60)
 PLAYER_SPEED = 2.25
 JUMP_VELOCITY = -11  # initial jump impulse (negative = upward)
@@ -64,7 +65,7 @@ SLIME_SPEED = 1.1
 TILE_SIZE = 32
 MAP_SHIFT_DOWN_TILES = 0  
 PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]   
-KILL_BLOCK_TILES = {"13"}
+KILL_BLOCK_TILES = {"13", "14"}
 
 
 
@@ -141,6 +142,13 @@ class player:
             
             self.player_x = 10
             self.player_y = 350
+        elif level == 4:# spawn for level 4
+            
+            self.player_x = 10
+            self.player_y = 550
+            
+        self.player_vel_y = 0
+        self.is_jumping = False
 
         self.player_vel_y = 0
         self.is_jumping = False
@@ -165,6 +173,8 @@ class player:
         if self.player_x >= 800 - PLAYER_SIZE[0]:
             new_level = level + 1
             new_path = f'assets/level {new_level}.tmx'
+            if reward_cooldown == 0:
+                reward_player()
             if not os.path.exists(new_path):
                 print(f"Warning: map '{new_path}' not found; staying on level {level}")
             else:
@@ -364,10 +374,14 @@ def draw():
     death_counter()
     pygame.display.flip()
     
-
+def reward_player():
+    global level, LIVES, reward_cooldown
+    if level == 3 and LIVES < 3:
+        LIVES += 1
+        reward_cooldown = FPS * 2  # 2 second cooldown
     
 def reset_game():
-    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, respawn_cooldown
+    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, respawn_cooldown, reward_cooldown
     # prevents multiple deaths when reseting the game
     if respawn_cooldown > 0:
         return
@@ -406,7 +420,7 @@ def reset_game():
         except Exception:
             pass
        #
-        # short cooldown to prevent immediate death
+        # short cooldown to prevent immediate r
         respawn_cooldown = FPS/2
 
     else:
@@ -442,13 +456,16 @@ def event():
 
 #calls functions while game is running
 def run():
-    global events, respawn_cooldown
+    global events, respawn_cooldown, reward_cooldown
     while running:
         events = pygame.event.get()
         clock.tick(FPS)
         # decrement respawn cooldown if active (prevents immediate double-deaths after a full reset)
         if respawn_cooldown > 0:
             respawn_cooldown -= 1
+        # decrement reward cooldown if active (prevents multiple life rewards at level end)
+        if reward_cooldown > 0:
+            reward_cooldown -= 1
         if level == 1:
             TILEMAP_PATH = 'assets/level 1.tmx'
         elif level == 2:
@@ -456,7 +473,9 @@ def run():
         event()
         player_obj.update()
         
-        blue_slime.movement(blue_enemy)
+        # only move the enemy if one exists; call the instance method on the object
+        if blue_enemy is not None:
+            blue_enemy.movement()
         draw()
 
         
