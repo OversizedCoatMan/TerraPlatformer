@@ -6,16 +6,13 @@ import subprocess
 import os
 
 
-#connects to database, if no table create one
 conn = sqlite3.connect('assets/game_data.db')
 cur = conn.cursor()
 cur.execute('create table if not exists game_data (level integer, deaths integer)')
 
-#fetches data from database
 cur.execute('select level, deaths from game_data order by rowid desc limit 1')
 row = cur.fetchall()
 
-#checks if there is level data in database, if not it sets it to level 1
 if row:
     level = row[0][0]
     
@@ -32,7 +29,6 @@ else:
     conn.commit()
     level = 1
     deaths = 0
-# determine tilemap path from saved level, with fallback if file missing
 TILEMAP_PATH = f'assets/level {level}.tmx'
 if not os.path.exists(TILEMAP_PATH):
     print(f"Warning: map '{TILEMAP_PATH}' not found; falling back to 'assets/level 1.tmx'")
@@ -47,8 +43,6 @@ if not os.path.exists(TILEMAP_PATH):
         pass
 
 
-#constant variables
-
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600 
 FPS = 60
@@ -56,9 +50,10 @@ LIVES = 3
 
 respawn_cooldown = 0
 reward_cooldown = 0
+is_resetting = False
 PLAYER_SIZE = (50, 60)
 PLAYER_SPEED = 2.25
-JUMP_VELOCITY = -11  # initial jump impulse (negative = upward)
+JUMP_VELOCITY = -11
 GRAVITY = 0.5
 SLIME_SPEED = 1.1
 
@@ -68,8 +63,42 @@ PASS_THROUGH_TILES = ["1", "4", "5", "6", "7", "8", "9", "10", "11"]
 KILL_BLOCK_TILES = {"13", "14"}
 
 
+def get_spawn_for_level(lvl):
+    """Return (x,y) spawn coordinates (map/screen pixels) for given level."""
+    if lvl == 1:
+        return 100, 400
+    if lvl == 2:
+        return 10, 550
+    if lvl == 3:
+        return 10, 350
+    if lvl == 4:
+        return 10, 550
+    return 10, 350
 
-#initialises pygame and display
+
+def resolve_player_spawn(p):
+    """If the player is overlapping solid tiles after a spawn, nudge them up until clear.
+
+    This prevents the player from being placed inside geometry and phasing through
+    on the next update. Limits to 200 pixels of upward adjustment.
+    """
+    for _ in range(200):
+        player_rect = pygame.Rect(p.player_x, p.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1])
+        overlapping = False
+        for tile in p.tilemap.tiles:
+            if tile.tile_id in PASS_THROUGH_TILES:
+                continue
+            tile_rect = pygame.Rect(tile.rect.x, tile.rect.y + p.map_offset_y, TILE_SIZE, TILE_SIZE)
+            if player_rect.colliderect(tile_rect):
+                overlapping = True
+                break
+        if not overlapping:
+            return
+        p.player_y -= 1
+
+
+
+
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Tile Game")
@@ -78,30 +107,25 @@ running = True
 life_image = pygame.image.load('assets/heart.png').convert_alpha()
 life_image = pygame.transform.scale(life_image, (32, 32))
 arial = pygame.font.SysFont('Arial', 24, False, False)
-# added layers so objects can be drawn on top of other tiles
+footstep_grass = pygame.mixer.Sound("assets/footstep grass 28.wav")
 LAYER_IDS = {
-    'midground': {'4'},   #trees
-    'foreground': {'13'}  #spikes
+    'midground': {'4'},
+    'foreground': {'13'}
 }
 LAYER_ORDER = ['background', 'midground', 'foreground']
 
 def load_map(filename):
-    # loads tilemap using function from tiles.py
     return TileMap(filename, tile_size=TILE_SIZE, layer_ids=LAYER_IDS, layer_order=LAYER_ORDER)
 
-#loads tilemap and calculates y offset to lower map
 tilemap = load_map(TILEMAP_PATH)
 map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
 map_offset_y += MAP_SHIFT_DOWN_TILES * TILE_SIZE
 
 main_menu = pygame.image.load('assets/main menu.png').convert_alpha()
-#counts total deaths and displayes them on the screen
 def death_counter():
     global deaths
-    # Render death counter in white so it contrasts with the black background
     death_text = arial.render(f'Deaths: {deaths}', True, (255, 255, 255))
     screen.blit(death_text, (680, 10))
-#button class for main menu button
 class BUTTON:
     def __init__(self, x, y, image, scale, held):
         width = image.get_width()
@@ -109,41 +133,33 @@ class BUTTON:
         self.image = pygame.transform.scale(image, (int(width * scale), int(height * scale)))
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
-    #function for menu button
     def menu(self, events, pos):
         
         global running
         screen.blit(self.image, (self.rect.x, self.rect.y))
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Use event.pos for the exact click position
                 if self.rect.collidepoint(event.pos):
-                    # Launch main.py with the same Python interpreter so it
-                    # has access to the same virtualenv/site-packages (e.g. pygame).
                     script_path = os.path.join(os.path.dirname(__file__), 'main.py')
                     subprocess.Popen([sys.executable, script_path], cwd=os.path.dirname(__file__))
                     running = False
 menu_button = BUTTON(48, 11, main_menu, 0.2, False)
 
-# create player instance after map is loaded
 class player:
     def __init__(self):
         self.player = pygame.image.load('assets/PLAYER1.png').convert_alpha()
         self.player = pygame.transform.scale(self.player, PLAYER_SIZE)
         
-        if level == 1:#level 1 spawn
+        if level == 1:
             self.player_x = 100
             self.player_y = 400
-        elif level == 2:# level 2 spawn
-            
+        elif level == 2:
             self.player_x = 10
             self.player_y = 550
-        elif level == 3:# spawn for level 3
-            
+        elif level == 3:
             self.player_x = 10
             self.player_y = 350
-        elif level == 4:# spawn for level 4
-            
+        elif level == 4:
             self.player_x = 10
             self.player_y = 550
             
@@ -155,21 +171,51 @@ class player:
         self.facing_right = True
         
         self.keys = pygame.key.get_pressed()
+        self.footstep_grass = footstep_grass
+        self._last_sfx_time = 0
 
     def update(self):
         global level, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, tile_bottom, tile_top, tile_left, tile_right
-        
+        debounce_ms = 500
         self.keys = pygame.key.get_pressed()
 
-        # HORIZONTAL MOVEMENT
         dx = 0
         if self.keys[pygame.K_a]:
             dx = -PLAYER_SPEED
+            if not self.is_jumping:
+                now = pygame.time.get_ticks()
+                if now - self._last_sfx_time >= debounce_ms:
+                    player_bottom = self.player_y + PLAYER_SIZE[1]
+                    player_center_x = self.player_x + PLAYER_SIZE[0] // 2
+                    on_grass = False
+                    for tile in self.tilemap.tiles:
+                        tile_screen = pygame.Rect(tile.rect.x, tile.rect.y + self.map_offset_y, TILE_SIZE, TILE_SIZE)
+                        if tile_screen.collidepoint(player_center_x, player_bottom):
+                            if tile.tile_id == '3':
+                                on_grass = True
+                            break
+                    if on_grass:
+                        self.footstep_grass.play()
+                        self._last_sfx_time = now
             self.facing_right = False
         if self.keys[pygame.K_d]:
             dx = PLAYER_SPEED
+            if not self.is_jumping:
+                now = pygame.time.get_ticks()
+                if now - self._last_sfx_time >= debounce_ms:
+                    player_bottom = self.player_y + PLAYER_SIZE[1]
+                    player_center_x = self.player_x + PLAYER_SIZE[0] // 2
+                    on_grass = False
+                    for tile in self.tilemap.tiles:
+                        tile_screen = pygame.Rect(tile.rect.x, tile.rect.y + self.map_offset_y, TILE_SIZE, TILE_SIZE)
+                        if tile_screen.collidepoint(player_center_x, player_bottom):
+                            if tile.tile_id == '3':
+                                on_grass = True
+                            break
+                    if on_grass:
+                        self.footstep_grass.play()
+                        self._last_sfx_time = now
             self.facing_right = True
-        # next level when end of current level reached
         if self.player_x >= 800 - PLAYER_SIZE[0]:
             new_level = level + 1
             new_path = f'assets/level {new_level}.tmx'
@@ -180,27 +226,28 @@ class player:
             else:
                 level = new_level
                 TILEMAP_PATH = new_path
-                # load the new map and calculate its offset
                 tilemap = load_map(TILEMAP_PATH)
                 self.tilemap = tilemap
                 map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
                 self.map_offset_y = map_offset_y
-                # put new level in database
+                
                 cur.execute('delete from game_data')
                 cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
                 conn.commit()
-                # spawn enemys for level
                 blue_enemy = spawn_enemy(level)
                 self.blue_slime = blue_enemy
-                # spawn player at start of new level
-                self.player_x = 0
+                sx, sy = get_spawn_for_level(level)
+                self.player_x = sx
+                self.player_y = sy
+                self.player_vel_y = 0
+                self.is_jumping = False
+                resolve_player_spawn(self)
 
         self.player_x += dx
         player_rect = pygame.Rect(self.player_x, self.player_y, PLAYER_SIZE[0], PLAYER_SIZE[1])
 
         
 
-        # Horizontal
         for tile in self.tilemap.tiles:
             if tile.tile_id in PASS_THROUGH_TILES:
                 continue
@@ -224,22 +271,18 @@ class player:
                 elif dx < 0 and player_left < tile_right and player_right > tile_right:
                     self.player_x = tile_right
             
-        # Clamp player horizontally
         map_left = 0
         map_right = max(tile.rect.x for tile in self.tilemap.tiles) + TILE_SIZE
 
         self.player_x = max(map_left, min(self.player_x, map_right - PLAYER_SIZE[0]))
 
-        # JUMPING 
         if (self.keys[pygame.K_SPACE] or self.keys[pygame.K_w] or self.keys[pygame.K_UP]) and not self.is_jumping:
             self.player_vel_y = JUMP_VELOCITY
             self.is_jumping = True
 
-        # VERTICAL MOVEMENT
         self.player_vel_y += GRAVITY
         self.player_y += self.player_vel_y
 
-        # Vertical collision
         for tile in self.tilemap.tiles:
             if tile.tile_id in  PASS_THROUGH_TILES:
                 continue
@@ -261,7 +304,6 @@ class player:
                     if tile.tile_id in KILL_BLOCK_TILES:
                         reset_game()
                     else:
-                # Falling
                         self.player_y = tile_top - PLAYER_SIZE[1]
                         self.player_vel_y = 0
                         self.is_jumping = False
@@ -269,7 +311,6 @@ class player:
                     if tile.tile_id in KILL_BLOCK_TILES:
                         reset_game()
                     else:
-                # Jumping
                         self.player_y = tile_bottom
                         self.player_vel_y = 0
         if self.player_y >= SCREEN_HEIGHT - 32:
@@ -296,7 +337,6 @@ class blue_slime:
 
         self.rect.x += SLIME_SPEED * self.direction
 
-            # --- HORIZONTAL COLLISION ---
         for tile in tilemap.tiles:
             if tile.tile_id in PASS_THROUGH_TILES:
                 continue
@@ -312,11 +352,12 @@ class blue_slime:
             slime_bottom = self.rect.y + TILE_SIZE
 
             if slime_bottom > tile_top and slime_top < tile_bottom:
-                # Walking into wall RIGHT
                 if self.direction == 1 and slime_right > tile_left and slime_left < tile_left:
                     self.rect.x = tile_left - TILE_SIZE
                     self.direction = -1
-                    # Walking into wall LEFT
+                elif self.direction == -1 and slime_left < tile_right and slime_right > tile_right:
+                    self.rect.x = tile_right
+                    self.direction = 1
                 elif self.direction == -1 and slime_left < tile_right and slime_right > tile_right:
                     self.rect.x = tile_right
                     self.direction = 1
@@ -347,7 +388,6 @@ def spawn_enemy(level):
 player_obj = player()
 player_obj.tilemap = tilemap
 player_obj.map_offset_y = map_offset_y
-# spawn the enemy for the current level
 blue_enemy = spawn_enemy(level)
 
 player_obj.blue_slime = blue_enemy
@@ -378,65 +418,59 @@ def reward_player():
     global level, LIVES, reward_cooldown
     if level == 3 and LIVES < 3:
         LIVES += 1
-        reward_cooldown = FPS * 2  # 2 second cooldown
+        reward_cooldown = FPS * 2
     
-def reset_game():
-    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, respawn_cooldown, reward_cooldown
-    # prevents multiple deaths when reseting the game
-    if respawn_cooldown > 0:
+def reset_game(ignore_cooldown=False):
+    global level, LIVES, deaths, TILEMAP_PATH, tilemap, map_offset_y, blue_enemy, respawn_cooldown, reward_cooldown, is_resetting
+    if is_resetting and not ignore_cooldown:
         return
-    # make sure deaths is initialized and has a value
-    if deaths is None:
-        deaths = 0
-    LIVES -= 1
-    deaths += 1
+    if not ignore_cooldown and respawn_cooldown > 0:
+        return
 
-    print(deaths)
-    cur.execute('delete from game_data')
-    cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
-    if LIVES == 0:
-        LIVES = 3
-        level = 1
-        player_obj.player_x = 100
-        player_obj.player_y = 374
-        # ensure player isn't moving or flagged as jumping so they don't immediately re-trigger a death
-        player_obj.player_vel_y = 0
-        player_obj.is_jumping = False
-        TILEMAP_PATH = 'assets/level 1.tmx'
-        tilemap = load_map(TILEMAP_PATH)
-        map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
-        # attach updated map and offset to player so collisions match rendering
-        player_obj.tilemap = tilemap
-        player_obj.map_offset_y = map_offset_y
-        
-        # respawn and attach enemy for the new level
-        blue_enemy = spawn_enemy(level)
-        player_obj.blue_slime = blue_enemy
-        # enter level and death data into database
-        try:
-            cur.execute('delete from game_data')
-            cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
-            conn.commit()
-        except Exception:
-            pass
-       #
-        # short cooldown to prevent immediate r
-        respawn_cooldown = FPS/2
+    is_resetting = True
+    try:
+        if deaths is None:
+            deaths = 0
+        LIVES -= 1
+        deaths += 1
 
-    else:
-        # reset player state and position for current level
-        player_obj.player_vel_y = 0
-        player_obj.is_jumping = False
-        if level == 1:
+        print(deaths)
+        cur.execute('delete from game_data')
+        cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
+        respawn_cooldown = FPS//2
+        if LIVES == 0:
+            LIVES = 3
+            level = 1
             player_obj.player_x = 100
             player_obj.player_y = 374
-        elif level == 2:
-            player_obj.player_x = 10
-            player_obj.player_y = 462
-        elif level == 3:
-            player_obj.player_x = 10
-            player_obj.player_y = 352
-#handles events in game, 
+            player_obj.player_vel_y = 0
+            player_obj.is_jumping = False
+            TILEMAP_PATH = 'assets/level 1.tmx'
+            tilemap = load_map(TILEMAP_PATH)
+            map_offset_y = SCREEN_HEIGHT - len(tilemap.map_data) * TILE_SIZE
+            player_obj.tilemap = tilemap
+            player_obj.map_offset_y = map_offset_y
+            
+            blue_enemy = spawn_enemy(level)
+            player_obj.blue_slime = blue_enemy
+            try:
+                cur.execute('delete from game_data')
+                cur.execute('insert into game_data (level, deaths) values (?, ?)', (level, deaths))
+                conn.commit()
+            except Exception:
+                pass
+            respawn_cooldown = FPS/2
+
+        else:
+            player_obj.player_vel_y = 0
+            player_obj.is_jumping = False
+            sx, sy = get_spawn_for_level(level)
+            player_obj.player_x = sx
+            player_obj.player_y = sy
+            resolve_player_spawn(player_obj)
+    finally:
+        is_resetting = False
+
 def event():
     global level, running, events
     keys = pygame.key.get_pressed()
@@ -454,16 +488,13 @@ def event():
             sys.exit()
 
 
-#calls functions while game is running
 def run():
     global events, respawn_cooldown, reward_cooldown
     while running:
         events = pygame.event.get()
         clock.tick(FPS)
-        # decrement respawn cooldown if active (prevents immediate double-deaths after a full reset)
         if respawn_cooldown > 0:
             respawn_cooldown -= 1
-        # decrement reward cooldown if active (prevents multiple life rewards at level end)
         if reward_cooldown > 0:
             reward_cooldown -= 1
         if level == 1:
@@ -473,16 +504,9 @@ def run():
         event()
         player_obj.update()
         
-        # only move the enemy if one exists; call the instance method on the object
         if blue_enemy is not None:
             blue_enemy.movement()
         draw()
 
-        
-        
-        
-    
-
-#checks if file is main file and runs game
 if __name__ == "__main__":
     run()
