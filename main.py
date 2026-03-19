@@ -19,6 +19,8 @@ start = pygame.image.load("assets/startbtn.png").convert_alpha()
 close = pygame.image.load("assets/closeimg.png").convert_alpha()
 main_menu.blit(menubg_large, (0, 0))
 
+
+
 class BUTTON:
     def __init__(self, x, y, image, scale, held):
         width = image.get_width()
